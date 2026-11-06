@@ -1,13 +1,14 @@
 #define _GNU_SOURCE
 #include <dirent.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 
 #include "mongoose.h"
 
 #define UPLOAD_DIR "./uploads"
-#define WEB_DIR "./dist"
+#define WEB_DIR "./web"
 #define MAX_NAME 255
 
 // Only plain file names are allowed: reject empty names, path separators,
@@ -232,9 +233,8 @@ static void serve_web(struct mg_connection *c, struct mg_http_message *hm) {
     mg_http_serve_dir(c, hm, &opts);
   } else {
     mg_http_reply(c, 404, "Content-Type: text/plain; charset=utf-8\r\n",
-                  "The frontend has not been built. "
-                  "Run \"make dev\" for development or \"make start\" "
-                  "for production.\n");
+                  "The frontend is missing. Expected %s/index.html.\n",
+                  WEB_DIR);
   }
 }
 
@@ -268,9 +268,14 @@ int main(void) {
   mkdir(UPLOAD_DIR, 0755);
   mg_log_set(MG_LL_ERROR);
 
+  const char *port = getenv("PORT");
+  if (port == NULL || *port == '\0')
+    port = "8080";
+  char url[64];
+  mg_snprintf(url, sizeof(url), "http://0.0.0.0:%s", port);
+
   struct mg_mgr mgr;
   mg_mgr_init(&mgr);
-  const char *url = "http://0.0.0.0:8080";
   if (mg_http_listen(&mgr, url, fn, NULL) == NULL) {
     fprintf(stderr, "cannot listen on %s\n", url);
     mg_mgr_free(&mgr);

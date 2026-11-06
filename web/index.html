@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>handme — LAN file transfer</title>
+  <link rel="stylesheet" href="/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%A6%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">handme</span>
+      <span class="badge">LAN file transfer</span>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card upload-card">
+      <div id="dropzone" class="dropzone" tabindex="0" role="button"
+           aria-label="Choose or drop files to upload">
+        <svg class="drop-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 16V4m0 0L7 9m5-5 5 5M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"
+                fill="none" stroke="currentColor" stroke-width="1.8"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p class="drop-title">Drop files here or <span class="link">browse</span></p>
+        <p class="drop-hint">Files are stored on this computer and visible to everyone on the LAN.</p>
+        <input id="file-input" type="file" multiple hidden>
+      </div>
+      <div id="progress-wrap" class="progress-wrap" hidden>
+        <div class="progress-label">
+          <span id="progress-name"></span>
+          <span id="progress-pct"></span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar" class="progress-bar"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card files-card">
+      <div class="files-header">
+        <h2>Files <span id="file-count" class="count"></span></h2>
+        <button id="refresh" class="icon-btn" type="button" title="Refresh">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M20 11a8 8 0 1 0-2.34 5.66M20 5v6h-6" fill="none"
+                  stroke="currentColor" stroke-width="1.8"
+                  stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          Refresh
+        </button>
+      </div>
+      <div class="table-wrap">
+        <table class="files">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th class="size">Size</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="file-list"></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>No files yet. Upload something!</p>
+        <p id="loading" class="empty">Loading…</p>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

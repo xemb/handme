@@ -231,7 +231,7 @@ th {
 td { font-size: 0.92rem; }
 
 th.size, td.size { width: 110px; }
-th.actions, td.actions { width: 190px; text-align: right; }
+th.actions, td.actions { width: 250px; text-align: right; white-space: nowrap; }
 
 .file-name {
   display: flex;
@@ -269,10 +269,17 @@ th.actions, td.actions { width: 190px; text-align: right; }
   padding: 0.32rem 0.65rem;
   cursor: pointer;
   text-decoration: none;
+  white-space: nowrap;
   transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
 .btn + .btn { margin-left: 0.4rem; }
+
+.btn svg {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+}
 
 .btn:hover { border-color: var(--accent); background: var(--accent-soft); }
 
@@ -313,8 +320,60 @@ th.actions, td.actions { width: 190px; text-align: right; }
 .toast.success { border-color: var(--success); }
 
 @media (max-width: 560px) {
-  th, td { padding: 0.65rem 0.85rem; }
-  th.size, td.size { width: 82px; }
-  th.actions, td.actions { width: 150px; }
-  .btn span { display: none; }
+  .container { padding-top: 1.25rem; }
+  .upload-card { padding: 0.9rem; }
+  .dropzone { padding: 1.9rem 0.75rem; }
+
+  .files-header { padding: 0.85rem 1rem; }
+
+  /* Turn each file row into a card: name + size on the first line,
+     full-width action buttons below. Nothing gets cropped or hidden. */
+  .files thead { display: none; }
+
+  table.files,
+  table.files tbody {
+    display: block;
+  }
+
+  table.files tr {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.55rem 0.75rem;
+    padding: 0.85rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  tbody tr:last-child { border-bottom: none; }
+
+  table.files td {
+    display: block;
+    width: auto;
+    padding: 0;
+    border: none;
+    text-align: left;
+  }
+
+  table.files td.size {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+    width: auto;
+    font-size: 0.82rem;
+  }
+
+  table.files td.actions {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  table.files .btn {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  table.files .btn + .btn { margin-left: 0; }
+
+  table.files .btn span { display: inline; }
 }

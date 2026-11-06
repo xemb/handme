@@ -54,7 +54,22 @@ function fileIcon() {
   return svg;
 }
 
-function actionButton(label, href, className) {
+function actionIcon(pathData) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+  path.setAttribute("d", pathData);
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", "currentColor");
+  path.setAttribute("stroke-width", "1.8");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  svg.appendChild(path);
+  return svg;
+}
+
+function actionButton(label, href, className, iconPath) {
   const isLink = Boolean(href);
   const el = document.createElement(isLink ? "a" : "button");
   el.className = "btn" + (className ? " " + className : "");
@@ -64,6 +79,7 @@ function actionButton(label, href, className) {
   } else {
     el.type = "button";
   }
+  el.appendChild(actionIcon(iconPath));
   const text = document.createElement("span");
   text.textContent = label;
   el.appendChild(text);
@@ -97,9 +113,16 @@ function renderFiles(files) {
     actionsCell.className = "actions";
     const download = actionButton(
       "Download",
-      "/download?file=" + encodeURIComponent(file.name)
+      "/download?file=" + encodeURIComponent(file.name),
+      "",
+      "M12 4v11m0 0 4-4m-4 4-4-4M5 20h14"
     );
-    const del = actionButton("Delete", null, "danger");
+    const del = actionButton(
+      "Delete",
+      null,
+      "danger",
+      "M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m-7 0v12a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2V7M10 11v4m4-4v4"
+    );
     del.addEventListener("click", () => deleteFile(file.name, del));
     actionsCell.append(download, del);
 

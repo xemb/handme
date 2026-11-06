@@ -1,0 +1,11 @@
+# Editor
+.vscode
+
+# Product
+build
+
+# Claude Code
+CLAUDE.md
+
+# Upload folder
+uploads

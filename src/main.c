@@ -1,11 +1,13 @@
 #define _GNU_SOURCE
-#include <dirent.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
 
 #include "mongoose.h"
+
+#if defined(_WIN32)
+#include <windows.h>
+#endif
 
 #define UPLOAD_DIR "./uploads"
 #define WEB_DIR "./web"
@@ -33,43 +35,99 @@ static bool io_puts(struct mg_iobuf *io, const char *s) {
   return mg_iobuf_add(io, io->len, s, n) == n;
 }
 
+// Build the on-disk path of an uploaded file into path[]. Returns false when
+// the name does not fit.
+static bool upload_path(const char *name, char *path, size_t path_size) {
+  return mg_snprintf(path, path_size, UPLOAD_DIR "/%s", name) < path_size;
+}
+
+#if defined(_WIN32)
+// Convert a UTF-8 path into the wide (UTF-16) form used by the Windows CRTs.
+static bool utf8_to_wide(const char *path, wchar_t *wpath, size_t wpath_size) {
+  return MultiByteToWideChar(CP_UTF8, 0, path, -1, wpath,
+                             (int) wpath_size) > 0;
+}
+#endif
+
+// Open a file for writing, discarding any previous content. File names are
+// UTF-8 on every platform, but on Windows plain fopen() would interpret them
+// as ANSI, so use the wide-character variant there.
+static FILE *open_write(const char *path) {
+#if defined(_WIN32)
+  wchar_t wpath[MG_PATH_MAX];
+  if (!utf8_to_wide(path, wpath, MG_PATH_MAX))
+    return NULL;
+  return _wfopen(wpath, L"wb");
+#else
+  return fopen(path, "wb");
+#endif
+}
+
+// Remove a file. Same UTF-8 story as open_write(): remove() takes an ANSI path
+// on Windows and would fail for non-ASCII names.
+static bool remove_file(const char *path) {
+#if defined(_WIN32)
+  wchar_t wpath[MG_PATH_MAX];
+  if (!utf8_to_wide(path, wpath, MG_PATH_MAX))
+    return false;
+  return DeleteFileW(wpath) != 0;
+#else
+  return remove(path) == 0;
+#endif
+}
+
+// State shared between list_files() and its mg_fs_posix.ls() callback
+struct file_list {
+  struct mg_iobuf *io;
+  bool first;
+  bool ok;
+};
+
+// Append one JSON object for a directory entry, skipping everything that is
+// not a regular file inside the uploads directory.
+static void add_file_entry(const char *name, void *userdata) {
+  struct file_list *list = (struct file_list *) userdata;
+  char path[512];
+  size_t size = 0;
+  int flags;
+  char *item;
+
+  if (!list->ok || !safe_name(name))
+    return;
+  if (!upload_path(name, path, sizeof(path)))
+    return;
+  flags = mg_fs_posix.st(path, &size, NULL);
+  if (flags == 0 || (flags & MG_FS_DIR) != 0)
+    return;
+
+  item = mg_mprintf("%s{\"name\":%m,\"size\":%llu}", list->first ? "" : ",",
+                    MG_ESC(name), (unsigned long long) size);
+  if (item == NULL) {
+    list->ok = false;
+  } else {
+    list->ok = io_puts(list->io, item);
+    mg_free(item);
+    list->first = false;
+  }
+}
+
 // GET /files - list files in the uploads directory
 static void list_files(struct mg_connection *c) {
-  DIR *dir = opendir(UPLOAD_DIR);
-  if (dir == NULL) {
+  struct mg_iobuf io = {0};
+  struct file_list list = {&io, true, true};
+
+  if ((mg_fs_posix.st(UPLOAD_DIR, NULL, NULL) & MG_FS_DIR) == 0) {
     mg_http_reply(c, 500, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"cannot open uploads dir\"}\n");
     return;
   }
 
-  struct mg_iobuf io = {0};
-  bool first = true, ok = io_puts(&io, "{\"ok\":true,\"files\":[");
+  list.ok = io_puts(&io, "{\"ok\":true,\"files\":[");
+  mg_fs_posix.ls(UPLOAD_DIR, add_file_entry, &list);
 
-  struct dirent *de;
-  while (ok && (de = readdir(dir)) != NULL) {
-    char path[512];
-    struct stat st;
-    if (!safe_name(de->d_name))
-      continue;
-    mg_snprintf(path, sizeof(path), UPLOAD_DIR "/%s", de->d_name);
-    if (lstat(path, &st) != 0 || !S_ISREG(st.st_mode))
-      continue;
-
-    char *item = mg_mprintf("%s{\"name\":%m,\"size\":%lld}", first ? "" : ",",
-                            MG_ESC(de->d_name), (long long)st.st_size);
-    if (item == NULL) {
-      ok = false;
-    } else {
-      ok = io_puts(&io, item);
-      mg_free(item);
-      first = false;
-    }
-  }
-  closedir(dir);
-
-  if (ok)
-    ok = io_puts(&io, "]}");
-  if (ok) {
+  if (list.ok)
+    list.ok = io_puts(&io, "]}");
+  if (list.ok) {
     mg_http_reply(c, 200, "Content-Type: application/json\r\n", "%.*s\n",
                   (int)io.len, (char *)io.buf);
   } else {
@@ -81,19 +139,18 @@ static void list_files(struct mg_connection *c) {
 
 // GET /download?file=<name> - download a file as an attachment
 static void download_file(struct mg_connection *c, struct mg_http_message *hm) {
-  char name[256];
+  char name[256], path[512];
   int n = mg_http_get_var(&hm->query, "file", name, sizeof(name));
-  if (n <= 0 || !safe_name(name)) {
+  int flags;
+
+  if (n <= 0 || !safe_name(name) || !upload_path(name, path, sizeof(path))) {
     mg_http_reply(c, 400, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"bad filename\"}\n");
     return;
   }
 
-  char path[512];
-  mg_snprintf(path, sizeof(path), UPLOAD_DIR "/%s", name);
-
-  struct stat st;
-  if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+  flags = mg_fs_posix.st(path, NULL, NULL);
+  if (flags == 0 || (flags & MG_FS_DIR) != 0) {
     mg_http_reply(c, 404, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"file not found\"}\n");
     return;
@@ -116,31 +173,31 @@ static void download_file(struct mg_connection *c, struct mg_http_message *hm) {
               "Cache-Control: no-store\r\n",
               fallback, encoded);
 
-  struct mg_http_serve_opts opts = {.extra_headers = headers};
+  struct mg_http_serve_opts opts = {0};
+  opts.extra_headers = headers;
   mg_http_serve_file(c, hm, path, &opts);
 }
 
 // DELETE /delete?file=<name> - delete a file from the uploads directory
 static void delete_file(struct mg_connection *c, struct mg_http_message *hm) {
-  char name[256];
+  char name[256], path[512];
   int n = mg_http_get_var(&hm->query, "file", name, sizeof(name));
-  if (n <= 0 || !safe_name(name)) {
+  int flags;
+
+  if (n <= 0 || !safe_name(name) || !upload_path(name, path, sizeof(path))) {
     mg_http_reply(c, 400, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"bad filename\"}\n");
     return;
   }
 
-  char path[512];
-  mg_snprintf(path, sizeof(path), UPLOAD_DIR "/%s", name);
-
-  struct stat st;
-  if (lstat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+  flags = mg_fs_posix.st(path, NULL, NULL);
+  if (flags == 0 || (flags & MG_FS_DIR) != 0) {
     mg_http_reply(c, 404, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"file not found\"}\n");
     return;
   }
 
-  if (remove(path) != 0) {
+  if (!remove_file(path)) {
     mg_http_reply(c, 500, "Content-Type: application/json\r\n",
                   "{\"ok\":false,\"error\":\"delete failed\"}\n");
     return;
@@ -186,14 +243,15 @@ static long save_upload(struct mg_http_message *hm, char *out_name,
       return -2;
 
     char path[512];
-    mg_snprintf(path, sizeof(path), UPLOAD_DIR "/%s", name);
-    FILE *fp = fopen(path, "wb");
+    if (!upload_path(name, path, sizeof(path)))
+      return -2;
+    FILE *fp = open_write(path);
     if (fp == NULL)
       return -1;
     size_t written =
         part.body.len == 0 ? 0 : fwrite(part.body.buf, 1, part.body.len, fp);
     if (fclose(fp) != 0 || written != part.body.len) {
-      remove(path);
+      remove_file(path);
       return -1;
     }
 
@@ -227,9 +285,9 @@ static void upload_file(struct mg_connection *c, struct mg_http_message *hm) {
 
 // In production, serve the built frontend from the same server
 static void serve_web(struct mg_connection *c, struct mg_http_message *hm) {
-  struct stat st;
-  if (stat(WEB_DIR "/index.html", &st) == 0) {
-    struct mg_http_serve_opts opts = {.root_dir = WEB_DIR};
+  if (mg_fs_posix.st(WEB_DIR "/index.html", NULL, NULL) != 0) {
+    struct mg_http_serve_opts opts = {0};
+    opts.root_dir = WEB_DIR;
     mg_http_serve_dir(c, hm, &opts);
   } else {
     mg_http_reply(c, 404, "Content-Type: text/plain; charset=utf-8\r\n",

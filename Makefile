@@ -1,4 +1,3 @@
-CC ?= clang
 CFLAGS ?= -std=gnu11 -O2 -Wall -Wextra -Iinclude
 LDFLAGS ?=
 LDLIBS ?=
@@ -10,7 +9,14 @@ OBJS := $(BUILD_DIR)/main.o $(BUILD_DIR)/mongoose.o
 # Windows keeps a different binary suffix, needs winsock instead of pthreads,
 # and mingw32-make defaults its recipe shell to sh.exe even when no sh is
 # installed, so recipes there are always driven by cmd.exe.
+#
+# GNU make predefines CC=cc, so `CC ?=` would never take effect; only replace
+# that built-in default, and still honour CC from the environment or command
+# line. MSVC is not supported here - use start.ps1 for that.
 ifeq ($(OS),Windows_NT)
+  ifeq ($(origin CC),default)
+    CC := gcc
+  endif
   EXE := .exe
   LDLIBS += -lws2_32
   SHELL := cmd.exe
@@ -20,6 +26,9 @@ ifeq ($(OS),Windows_NT)
   RUN_BIN = $(subst /,\,$(BIN))
   START_RUN = powershell -NoProfile -ExecutionPolicy Bypass -File start.ps1
 else
+  ifeq ($(origin CC),default)
+    CC := clang
+  endif
   EXE :=
   LDLIBS += -lpthread
   MKDIR_P = mkdir -p $(1)
